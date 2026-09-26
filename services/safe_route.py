@@ -57,12 +57,12 @@ async def compute_safe_route(origin_lat, origin_lon, dest_lat, dest_lon, max_rer
             leg2 = calculate_route(detour_lat, detour_lon, dest_lat, dest_lon)
 
             clearance_km = config.DETOUR_BUFFER_DISTANCES_KM[0]
-            if leg_clears_hazards(leg1["coordinates"], hazards, clearance_km) and \
-               leg_clears_hazards(leg2["coordinates"], hazards, clearance_km):
+            if leg_clears_hazards(leg1["coordinates"], [worst], clearance_km) and \
+               leg_clears_hazards(leg2["coordinates"], [worst], clearance_km):
                 total_km = leg1["distance_km"] + leg2["distance_km"]
                 if valid_option is None or total_km < valid_option["total_km"]:
                     valid_option = {"coords": leg1["coordinates"] + leg2["coordinates"][1:], "total_km": total_km}
-                break  # first valid candidate at the current distance tier wins; closest tiers tried first
+                break
 
         if valid_option is None:
             status = "hazards_remaining"
