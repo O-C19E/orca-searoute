@@ -17,6 +17,12 @@ async def compute_safe_route(origin_lat, origin_lon, dest_lat, dest_lon, max_rer
     all_hazards = []
     status = "safe"
 
+    # Hazards at the origin or destination are surfaced as explicit warnings,
+    # not treated as a reason to refuse routing. A vessel already at a
+    # hazardous position still needs a route away from it, not a refusal.
+    origin_hazard_warning = None
+    destination_hazard_warning = None
+
     while reroutes_attempted < max_reroutes:
         sample_points = sample_route(coords, config.SEGMENT_INTERVAL_KM)
         results = await asyncio.gather(
@@ -30,17 +36,27 @@ async def compute_safe_route(origin_lat, origin_lon, dest_lat, dest_lon, max_rer
 
         all_hazards.extend(hazards)
 
-        origin_blocked = any(
-            haversine_km(origin_lat, origin_lon, h["lat"], h["lon"]) < config.DETOUR_BUFFER_DISTANCES_KM[0]
-            for h in hazards
-        )
-        dest_blocked = any(
-            haversine_km(dest_lat, dest_lon, h["lat"], h["lon"]) < config.DETOUR_BUFFER_DISTANCES_KM[0]
-            for h in hazards
-        )
-        if origin_blocked or dest_blocked:
-            status = "departure_or_arrival_unsafe"
-            break
+        if origin_hazard_warning is None:
+            origin_hazards_now = [
+                h for h in hazards
+                if haversine_km(origin_lat, origin_lon, h["lat"], h["lon"]) < config.DETOUR_BUFFER_DISTANCES_KM[0]
+            ]
+            if origin_hazards_now:
+                origin_hazard_warning = {
+                    "message": "Hazardous conditions detected at the current/starting position. This route heads away from your current location as quickly as possible.",
+                    "hazards": origin_hazards_now,
+                }
+
+        if destination_hazard_warning is None:
+            dest_hazards_now = [
+                h for h in hazards
+                if haversine_km(dest_lat, dest_lon, h["lat"], h["lon"]) < config.DETOUR_BUFFER_DISTANCES_KM[0]
+            ]
+            if dest_hazards_now:
+                destination_hazard_warning = {
+                    "message": "Hazardous conditions detected at the destination. Conditions may change before arrival — verify before proceeding.",
+                    "hazards": dest_hazards_now,
+                }
 
         worst = hazards[0]
 
@@ -79,6 +95,8 @@ async def compute_safe_route(origin_lat, origin_lon, dest_lat, dest_lon, max_rer
         "status": status,
         "route": {"coordinates": coords},
         "hazards": all_hazards,
+        "origin_hazard_warning": origin_hazard_warning,
+        "destination_hazard_warning": destination_hazard_warning,
         "reroute_summary": {
             "reroutes_attempted": reroutes_attempted,
             "hazards_detected": len(all_hazards),
